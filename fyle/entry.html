@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub User Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 5px;
+            border: 3px solid #ddd;
+        }
+        #loader {
+            display: none;
+        }
+        #result {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            border: 1px solid #ddd;
+            padding: 5px;
+        }
+        #avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            margin-bottom: 20px;
+            border: 2px solid #928f8f;
+            padding: 5px;
+        }
+        #user-info {
+            margin-bottom: 20px;
+        }
+        #user-info p {
+            margin: 5px 0;
+        }
+        .repo-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        .repo-box {
+            width: 18%;
+            margin: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .language-box {
+            background-color: #c0e4fc;
+            display: inline-block;
+            padding: 5px;
+            margin-right: 5px;
+        }
+        #pagination {
+            margin-top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .pagination-btn {
+            margin: 0 5px;
+            cursor: pointer;
+            font-size: 18px;
+        }
+        .pagination-btn.darker {
+            background-color: #ddd;
+        }
+        .disabled {
+            color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+
+<div>
+    <label for="username">GitHub Username:</label>
+    <input type="text" id="username" required>
+    
+    <label for="reposPerPage">Repositories per page (max is 100):</label>
+    <input type="number" id="reposPerPage" min="1" max="100" value="10" required>
+
+    <button onclick="getUserInfo()">Get User Info</button>
+</div>
+
+<div id="loader">Loading...</div>
+
+<div id="result">
+    <img id="avatar" alt="GitHub Avatar">
+    <div id="user-info">
+        <h2 id="username-result"></h2>
+        <p id="location"></p>
+        <p id="twitter"></p>
+        <a id="github-link" href="#" target="_blank">GitHub Profile</a>
+    </div>
+
+    <div id="repositories">
+        <h3>Repositories</h3>
+        <div id="repoPages" class="repo-container"></div>
+    </div>
+
+    <div id="pagination"></div>
+</div>
+
+<script>
+    let currentPage = 1;
+
+    async function getUserInfo() {
+        const username = document.getElementById('username').value;
+        const reposPerPage = document.getElementById('reposPerPage').value;
+
+        // Display loader while making API calls
+        document.getElementById('loader').style.display = 'block';
+
+        try {
+            // Fetch user data
+            const userResponse = await fetch(`https://api.github.com/users/${username}`);
+            const userData = await userResponse.json();
+
+            // Fetch user repositories
+            const reposResponse = await fetch(`https://api.github.com/users/${username}/repos`);
+            const reposData = await reposResponse.json();
+
+            // Hide loader
+            document.getElementById('loader').style.display = 'none';
+
+            // Display user information
+            document.getElementById('avatar').src = userData.avatar_url;
+            document.getElementById('username-result').innerText = userData.login;
+            document.getElementById('location').innerText = `Location: ${userData.location || 'Not specified'}`;
+            document.getElementById('twitter').innerText = `Twitter: ${userData.twitter_username || 'Not specified'}`;
+            
+            // Display GitHub link
+            const githubLink = document.getElementById('github-link');
+            githubLink.href = userData.html_url;
+            githubLink.innerText = `GitHub Profile: ${userData.login}`;
+
+            // Display repositories
+            await displayRepositories(reposData, reposPerPage);
+        } catch (error) {
+            // Hide loader
+            document.getElementById('loader').style.display = 'none';
+
+            // Display error message
+            alert('User not found. Please enter a valid GitHub username.');
+        }
+    }
+
+    async function displayRepositories(repos, reposPerPage) {
+        const repoPagesContainer = document.getElementById('repoPages');
+        repoPagesContainer.innerHTML = '';
+
+        const totalRepoPages = Math.ceil(repos.length / reposPerPage);
+        const startIndex = (currentPage - 1) * reposPerPage;
+        const endIndex = Math.min(currentPage * reposPerPage, repos.length);
+
+        for (let i = startIndex; i < endIndex; i++) {
+            const repo = repos[i];
+
+            const repoBox = document.createElement('div');
+            repoBox.className = 'repo-box';
+
+            const languages = repo.language ? [repo.language] : [];
+            if (repo.languages_url) {
+                // Fetch languages
+                const languagesData = await fetch(repo.languages_url);
+                const languagesJson = await languagesData.json();
+
+                const repoLanguages = Object.keys(languagesJson);
+                languages.push(...repoLanguages.slice(0, 2)); // Display max 3 languages
+                if (repoLanguages.length > 3) {
+                    const remainingLanguages = repoLanguages.length - 3;
+                    languages.push(`+${remainingLanguages} more`);
+                }
+            }
+
+            // Remove duplicate languages
+            const uniqueLanguages = [...new Set(languages)];
+
+            // Display languages in repo box
+            repoBox.innerHTML = `
+                <h4>${repo.name}</h4>
+                <p>${repo.description || 'No description'}</p>
+                <p>Languages: ${uniqueLanguages.map(lang => `<span class="language-box">${lang}</span>`).join(', ')}</p>
+            `;
+
+            repoPagesContainer.appendChild(repoBox);
+        }
+
+        // Display result container
+        document.getElementById('result').style.display = 'flex';
+
+        // Display pagination controls
+        displayPagination(totalRepoPages);
+    }
+
+    function displayPagination(totalPages) {
+        const paginationContainer = document.getElementById('pagination');
+        paginationContainer.innerHTML = '';
+
+        const firstPageBtn = createPaginationButton('««', currentPage > 1, () => changePage(1));
+        paginationContainer.appendChild(firstPageBtn);
+
+        const prevBtn = createPaginationButton('‹', currentPage > 1, () => changePage(currentPage - 1));
+        paginationContainer.appendChild(prevBtn);
+
+        for (let i = 1; i <= totalPages; i++) {
+            const pageBtn = createPaginationButton(i, true, () => changePage(i));
+            if (i === currentPage) {
+                pageBtn.classList.add('disabled');
+            }
+            paginationContainer.appendChild(pageBtn);
+        }
+
+        const nextBtn = createPaginationButton('›', currentPage < totalPages, () => changePage(currentPage + 1));
+        paginationContainer.appendChild(nextBtn);
+
+        const lastPageBtn = createPaginationButton('»»', currentPage < totalPages, () => changePage(totalPages));
+        paginationContainer.appendChild(lastPageBtn);
+    }
+
+    function createPaginationButton(label, enabled, clickHandler) {
+        const btn = document.createElement('span');
+        btn.textContent = label;
+        btn.className = 'pagination-btn' + (enabled ? '' : ' disabled');
+        btn.addEventListener('click', clickHandler);
+        if (label === '‹' || label === '›') {
+            btn.classList.add('darker');
+        }
+        return btn;
+    }
+
+    function changePage(newPage) {
+        currentPage = newPage;
+        getUserInfo();
+    }
+</script>
+
+</body>
+</html>
